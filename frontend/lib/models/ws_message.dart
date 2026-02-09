@@ -24,12 +24,14 @@ class WsMessage {
     String? characterId,
     String? displayName,
     String? location,
+    String? mode,
   }) {
     return WsMessage(type: 'auth', payload: {
       'device_id': deviceId,
       if (characterId != null) 'character_id': characterId, // ignore: use_null_aware_elements
       if (displayName != null) 'display_name': displayName, // ignore: use_null_aware_elements
       if (location != null) 'location': location, // ignore: use_null_aware_elements
+      if (mode != null) 'mode': mode, // ignore: use_null_aware_elements
     });
   }
 
@@ -46,5 +48,12 @@ class WsMessage {
 
   static WsMessage control({required String action}) {
     return WsMessage(type: 'control', payload: {'action': action});
+  }
+
+  static WsMessage videoFrame({required String base64Data}) {
+    return WsMessage(type: 'video_frame', payload: {
+      'data': base64Data,
+      'mime_type': 'image/jpeg',
+    });
   }
 }

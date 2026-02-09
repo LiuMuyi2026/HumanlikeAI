@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../../config/responsive.dart';
 import '../../config/theme.dart';
 import '../../providers/character_provider.dart';
 import '../../providers/conversation_provider.dart';
@@ -54,10 +55,16 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
 
   @override
   void dispose() {
-    ref.read(conversationProvider(widget.characterId).notifier).stopPolling();
     _textController.dispose();
     _scrollController.dispose();
     super.dispose();
+  }
+
+  @override
+  void deactivate() {
+    // Stop polling before the widget is disposed (ref is still valid here)
+    ref.read(conversationProvider(widget.characterId).notifier).stopPolling();
+    super.deactivate();
   }
 
   Future<void> _sendText() async {
@@ -185,23 +192,26 @@ class _ConversationScreenState extends ConsumerState<ConversationScreen> {
           ),
         ],
       ),
-      body: Column(
-        children: [
-          // Messages list
-          Expanded(
-            child: convoState.isLoading && convoState.messages.isEmpty
-                ? const Center(
-                    child: CircularProgressIndicator(color: AppTheme.primary),
-                  )
-                : convoState.messages.isEmpty
-                    ? _buildEmptyState(characterName)
-                    : _buildMessageList(convoState),
-          ),
-          // Typing indicator
-          if (convoState.isSending) _buildTypingIndicator(),
-          // Input bar
-          _buildInputBar(),
-        ],
+      body: Responsive.constrain(
+        context,
+        child: Column(
+          children: [
+            // Messages list
+            Expanded(
+              child: convoState.isLoading && convoState.messages.isEmpty
+                  ? const Center(
+                      child: CircularProgressIndicator(color: AppTheme.primary),
+                    )
+                  : convoState.messages.isEmpty
+                      ? _buildEmptyState(characterName)
+                      : _buildMessageList(convoState),
+            ),
+            // Typing indicator
+            if (convoState.isSending) _buildTypingIndicator(),
+            // Input bar
+            _buildInputBar(),
+          ],
+        ),
       ),
     );
   }

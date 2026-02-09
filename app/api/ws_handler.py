@@ -2,6 +2,7 @@ import asyncio
 import base64
 import json
 import logging
+import random
 import time
 import uuid
 
@@ -152,7 +153,7 @@ async def _proactive_search(text: str, ws: WebSocket, state: SessionState):
                 result = await _execute_tool("recall_memory", {"query": text}, state)
                 if result and "No relevant" not in result:
                     await state.gemini_session.inject_context(
-                        f"[你回忆起了以下相关内容，请自然地融入回答中]:\n{result}"
+                        f"[MEMORY CONTEXT - 不要提及这是系统提供的，自然地融入你的回答]:\n{result}"
                     )
                     logger.info("Injected recalled memories for: %s", text[:60])
                 await ws.send_json(
@@ -172,7 +173,7 @@ async def _proactive_search(text: str, ws: WebSocket, state: SessionState):
                 result = await _execute_tool("search_web", {"query": text}, state)
                 if result and "No search" not in result:
                     await state.gemini_session.inject_context(
-                        f"[以下是你搜索到的最新信息，请自然地分享给用户]:\n{result}"
+                        f"[SEARCH RESULTS - 自然地分享这些信息，不要说'我搜到了'或'系统告诉我']:\n{result}"
                     )
                     logger.info("Injected search results for: %s", text[:60])
                 await ws.send_json(
@@ -211,6 +212,8 @@ async def websocket_endpoint(ws: WebSocket):
         display_name = msg["payload"].get("display_name")
         user_location_from_client = msg["payload"].get("location")
         character_id_from_client = msg["payload"].get("character_id")
+        call_mode = msg["payload"].get("mode", "voice")  # 'voice' or 'video'
+        video_mode = call_mode == "video"
 
         # Upsert user in PostgreSQL
         character = None
@@ -274,7 +277,11 @@ async def websocket_endpoint(ws: WebSocket):
         memory_snippets: list[str] = []
         if settings.pinecone_api_key and settings.pinecone_index_host:
             try:
-                embedding_svc = EmbeddingService(api_key=settings.gemini_api_key)
+                embedding_svc = EmbeddingService(
+                    api_key=settings.gemini_api_key,
+                    model=settings.gemini_embedding_model,
+                    output_dimensionality=settings.embedding_dimension,
+                )
                 memory_svc = MemoryService(
                     api_key=settings.pinecone_api_key,
                     index_host=settings.pinecone_index_host,
@@ -289,7 +296,7 @@ async def websocket_endpoint(ws: WebSocket):
 
                 memory_snippets = await memory_svc.recall_memories(
                     user_id=memory_namespace,
-                    query_text=f"Recent conversation with {display_name or 'user'}",
+                    query_text=f"Conversation with {character.name if character else display_name or 'user'} about their interests and recent topics",
                     top_k=settings.memory_top_k,
                 )
                 logger.info("Recalled %d memories for user=%s", len(memory_snippets), user.id)
@@ -343,6 +350,9 @@ async def websocket_endpoint(ws: WebSocket):
                                     gemini_api_key=settings.gemini_api_key,
                                     pinecone_api_key=settings.pinecone_api_key,
                                     pinecone_index_host=settings.pinecone_index_host,
+                                    embedding_model=settings.gemini_embedding_model,
+                                    embedding_dimension=settings.embedding_dimension,
+                                    character_id=state.character_id,
                                 )
                             )
         except Exception as e:
@@ -357,6 +367,7 @@ async def websocket_endpoint(ws: WebSocket):
             news_context=news_context,
             user_location=user_location,
             character=character,
+            video_mode=video_mode,
         )
 
         # === Phase 3: Open Gemini Live session ===
@@ -370,16 +381,32 @@ async def websocket_endpoint(ws: WebSocket):
         await ws.send_json(
             server_message(
                 "auth_ok",
-                {"user_id": user.id, "session_id": state.session_id},
+                {
+                    "user_id": user.id,
+                    "session_id": state.session_id,
+                    "emotion": state.current_emotion.label,
+                    "valence": state.current_emotion.valence,
+                    "arousal": state.current_emotion.arousal,
+                    "intensity": state.current_emotion.intensity,
+                },
             )
         )
         logger.info("Session started: user=%s session=%s", user.id, state.session_id)
 
         # Send initial greeting prompt to ensure Gemini starts talking
         if character:
-            greeting_prompt = f"你是{character.name}。用中文自然地打个招呼，简短亲切，符合你的性格设定。"
+            if memory_snippets:
+                greeting_prompt = (
+                    f"你是{character.name}。你还记得之前聊过：{'; '.join(memory_snippets[:2])}。"
+                    "用中文自然地打招呼，可以自然地提起之前聊过的事情，简短亲切。不要问'最近怎么样'。"
+                )
+            else:
+                greeting_prompt = (
+                    f"你是{character.name}。用中文自然地打个招呼，简短亲切，符合你的性格设定。"
+                    "不要问'最近怎么样'，换个更有趣的方式开始，比如分享一件有趣的事或聊起一个轻松话题。"
+                )
         else:
-            greeting_prompt = "用中文自然地打个招呼，就像老朋友一样，简短亲切。"
+            greeting_prompt = "用中文自然地打个招呼，就像老朋友一样，简短亲切。不要问'最近怎么样'。"
         await state.gemini_session.send_text(greeting_prompt)
 
         # === Phase 4: Bidirectional streaming ===
@@ -448,6 +475,8 @@ async def websocket_endpoint(ws: WebSocket):
                         pinecone_index_host=settings.pinecone_index_host,
                         database_url=settings.database_url,
                         character_id=state.character_id,
+                        embedding_model=settings.gemini_embedding_model,
+                        embedding_dimension=settings.embedding_dimension,
                     )
                 )
 
@@ -525,6 +554,14 @@ async def _forward_client_to_gemini(ws: WebSocket, state: SessionState):
 
                 # Proactive search/recall in background (doesn't block)
                 asyncio.create_task(_proactive_search(text, ws, state))
+
+            elif msg["type"] == "video_frame":
+                try:
+                    frame_bytes = base64.b64decode(msg["payload"]["data"])
+                    await state.gemini_session.send_video_frame(frame_bytes)
+                    logger.debug("Forwarded video frame (%d bytes) to Gemini", len(frame_bytes))
+                except Exception as e:
+                    logger.warning("Failed to send video frame: %s", e)
 
             elif msg["type"] == "control":
                 if msg["payload"].get("action") == "end_session":
@@ -611,19 +648,16 @@ async def _forward_gemini_to_client(ws: WebSocket, state: SessionState):
                         output_transcription, "text", None
                     ):
                         text = output_transcription.text
-                        # Feature 3: Only reclassify emotion after user interaction
-                        if state.user_interacted_since_last_emotion:
-                            emo = classify_to_circumplex(
-                                text,
-                                relationship_type=state.relationship_type,
-                                familiarity_level=state.familiarity_level,
-                                mbti=state.mbti,
-                                prev_state=state.current_emotion,
-                            )
-                            state.current_emotion = emo
-                            state.user_interacted_since_last_emotion = False
-                        else:
-                            emo = state.current_emotion
+                        # Classify emotion for every AI utterance;
+                        # circumplex model's inertia (60% old + 40% new) prevents jitter
+                        emo = classify_to_circumplex(
+                            text,
+                            relationship_type=state.relationship_type,
+                            familiarity_level=state.familiarity_level,
+                            mbti=state.mbti,
+                            prev_state=state.current_emotion,
+                        )
+                        state.current_emotion = emo
                         if text.strip():
                             state.transcript_buffer.append(
                                 {"role": "model", "text": text, "emotion": emo.label}
@@ -743,16 +777,28 @@ async def _idle_topic_prompter(state: SessionState, settings):
                 # Generate a proactive topic prompt
                 ai_loc = state.ai_location or "东京"
                 topic_prompts = [
-                    "聊天有点安静了，自然地聊起一个有趣的话题，比如最近的新闻或者问问用户今天怎么样。",
-                    "分享一些你觉得有趣的事情，或者问用户一个轻松的问题。",
-                    f"聊聊{ai_loc}最近发生的有趣事情，或者问问用户那边怎么样。",
+                    "分享一件你最近觉得有趣的事情，或者聊聊你正在做什么。",
+                    "聊聊你最近看到的一个有意思的东西。",
+                    "问用户一个有趣的假设性问题，比如'如果能去任何地方旅行会选哪里'。",
+                    f"分享一下{ai_loc}最近有什么变化或者新鲜事。",
+                    "聊聊最近学到的一个有趣知识。",
+                    "问问用户最近有没有看什么好看的电影或者节目。",
+                    "随便聊聊你对某件事的看法，引发讨论。",
+                    "讲一个你听说过的有趣故事或者冷知识。",
                 ]
-
-                # Pick based on what context we have
-                if state.news_context:
-                    prompt = topic_prompts[0]
-                else:
-                    prompt = topic_prompts[1]
+                # Add memory-based prompt if available
+                if state.memory_svc and state.memory_namespace:
+                    try:
+                        snippets = await state.memory_svc.recall_memories(
+                            user_id=state.memory_namespace,
+                            query_text="interesting topics we discussed",
+                            top_k=1,
+                        )
+                        if snippets:
+                            topic_prompts.insert(0, f"你想起之前聊过：{snippets[0]}。自然地提起这个话题。")
+                    except Exception:
+                        pass
+                prompt = random.choice(topic_prompts)
 
                 try:
                     await state.gemini_session.send_text(prompt)

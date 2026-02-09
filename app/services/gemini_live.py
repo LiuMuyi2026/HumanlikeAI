@@ -86,6 +86,13 @@ class GeminiLiveSession:
                 audio=types.Blob(data=audio_bytes, mime_type="audio/pcm;rate=16000")
             )
 
+    async def send_video_frame(self, frame_bytes: bytes, mime_type: str = "image/jpeg") -> None:
+        """Send a single video frame (JPEG) to Gemini."""
+        if self._session and self._running:
+            await self._session.send_realtime_input(
+                video=types.Blob(data=frame_bytes, mime_type=mime_type)
+            )
+
     async def send_text(self, text: str) -> None:
         """Send a text message to Gemini as user input."""
         if self._session and self._running:

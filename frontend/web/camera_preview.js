@@ -4,6 +4,17 @@
   let _videoEl = null;
 
   window.cameraPreview = {
+    // Called from Dart's platform view factory to store the video element reference.
+    // This avoids getElementById which fails in Flutter's shadow DOM.
+    setVideoElement: function (el) {
+      _videoEl = el;
+      // If stream was already acquired, attach it immediately
+      if (_stream && _videoEl) {
+        _videoEl.srcObject = _stream;
+        _videoEl.play().catch(function () {});
+      }
+    },
+
     start: async function (elementId) {
       try {
         _stream = await navigator.mediaDevices.getUserMedia({
@@ -11,21 +22,17 @@
           audio: false,
         });
 
-        _videoEl = document.getElementById(elementId);
+        // Prefer element set by Dart factory; fallback to getElementById
         if (!_videoEl) {
-          _videoEl = document.createElement('video');
-          _videoEl.id = elementId;
-          _videoEl.style.position = 'fixed';
-          _videoEl.style.top = '-9999px';
-          _videoEl.style.left = '-9999px';
-          document.body.appendChild(_videoEl);
+          _videoEl = document.getElementById(elementId);
         }
 
-        _videoEl.srcObject = _stream;
-        _videoEl.setAttribute('autoplay', '');
-        _videoEl.setAttribute('playsinline', '');
-        _videoEl.muted = true;
-        await _videoEl.play();
+        if (_videoEl) {
+          _videoEl.srcObject = _stream;
+          _videoEl.muted = true;
+          await _videoEl.play();
+        }
+
         return true;
       } catch (e) {
         console.error('Camera start error:', e);
@@ -45,6 +52,21 @@
 
     getVideoElement: function () {
       return _videoEl;
+    },
+
+    captureFrame: function (quality) {
+      if (!_videoEl || !_stream) return null;
+      try {
+        var canvas = document.createElement('canvas');
+        canvas.width = _videoEl.videoWidth || 320;
+        canvas.height = _videoEl.videoHeight || 240;
+        canvas.getContext('2d').drawImage(_videoEl, 0, 0, canvas.width, canvas.height);
+        var dataUrl = canvas.toDataURL('image/jpeg', quality || 0.7);
+        return dataUrl.split(',')[1]; // return base64 only
+      } catch (e) {
+        console.error('Frame capture error:', e);
+        return null;
+      }
     },
   };
 })();

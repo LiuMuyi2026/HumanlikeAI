@@ -6,7 +6,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../config/theme.dart';
 import '../providers/chat_provider.dart';
 import '../providers/user_provider.dart';
-import 'emotion_indicator.dart';
 
 /// Displays the character's emotion image with crossfade transitions.
 ///
@@ -38,28 +37,19 @@ class EmotionAvatar extends ConsumerWidget {
     final emotionKey = chatState.emotionKey;
     final imageUrl = api.emotionImageUrl(characterId, emotionKey);
 
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        // Emotion image with crossfade
-        AnimatedSwitcher(
-          duration: const Duration(milliseconds: 500),
-          switchInCurve: Curves.easeIn,
-          switchOutCurve: Curves.easeOut,
-          child: ClipRRect(
-            key: ValueKey(emotionKey),
-            borderRadius: BorderRadius.circular(size * 0.1),
-            child: SizedBox(
-              width: size,
-              height: size,
-              child: _buildImage(imageUrl),
-            ),
-          ),
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 500),
+      switchInCurve: Curves.easeIn,
+      switchOutCurve: Curves.easeOut,
+      child: ClipRRect(
+        key: ValueKey(emotionKey),
+        borderRadius: BorderRadius.circular(size * 0.1),
+        child: SizedBox(
+          width: size,
+          height: size,
+          child: _buildImage(imageUrl),
         ),
-        const SizedBox(height: 8),
-        // Small emotion label overlay
-        EmotionIndicator(emotion: chatState.currentEmotion),
-      ],
+      ),
     );
   }
 
@@ -71,19 +61,12 @@ class EmotionAvatar extends ConsumerWidget {
     final api = ref.watch(apiClientProvider);
     final avatarUrl = api.avatarUrl(characterId);
 
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        ClipOval(
-          child: SizedBox(
-            width: size * 0.7,
-            height: size * 0.7,
-            child: _buildImage(avatarUrl),
-          ),
-        ),
-        const SizedBox(height: 8),
-        EmotionIndicator(emotion: chatState.currentEmotion),
-      ],
+    return ClipOval(
+      child: SizedBox(
+        width: size * 0.7,
+        height: size * 0.7,
+        child: _buildImage(avatarUrl),
+      ),
     );
   }
 

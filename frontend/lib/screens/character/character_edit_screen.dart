@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../config/constants.dart';
+import '../../config/responsive.dart';
 import '../../config/theme.dart';
 import '../../providers/character_provider.dart';
 import '../../widgets/form_fields/mbti_picker.dart';
@@ -152,10 +153,12 @@ class _CharacterEditScreenState extends ConsumerState<CharacterEditScreen> {
             _loaded = true;
           }
 
-          return Form(
-            key: _formKey,
-            child: ListView(
-              padding: const EdgeInsets.all(20),
+          return Responsive.constrain(
+            context,
+            child: Form(
+              key: _formKey,
+              child: ListView(
+                padding: Responsive.contentPadding(context).copyWith(top: 20, bottom: 20),
               children: [
                 TextFormField(
                   controller: _nameController,
@@ -264,6 +267,7 @@ class _CharacterEditScreenState extends ConsumerState<CharacterEditScreen> {
                 const SizedBox(height: 32),
               ],
             ),
+          ),
           );
         },
         loading: () => const Center(

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../config/constants.dart';
+import '../../config/responsive.dart';
 import '../../config/theme.dart';
 import '../../models/character.dart';
 import '../../providers/character_provider.dart';
@@ -258,11 +259,13 @@ class _AvatarGalleryScreenState extends ConsumerState<AvatarGalleryScreen> {
 
     return Scaffold(
       appBar: AppBar(title: const Text('Gallery')),
-      body: Column(
-        children: [
-          // Prompt input + generate buttons
-          Padding(
-            padding: const EdgeInsets.all(16),
+      body: Responsive.constrain(
+        context,
+        child: Column(
+          children: [
+            // Prompt input + generate buttons
+            Padding(
+              padding: const EdgeInsets.all(16),
             child: Column(
               children: [
                 TextField(
@@ -345,8 +348,8 @@ class _AvatarGalleryScreenState extends ConsumerState<AvatarGalleryScreen> {
 
                 return GridView.builder(
                   padding: const EdgeInsets.all(16),
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 2,
+                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: Responsive.gridColumns(context),
                     crossAxisSpacing: 12,
                     mainAxisSpacing: 12,
                   ),
@@ -437,7 +440,8 @@ class _AvatarGalleryScreenState extends ConsumerState<AvatarGalleryScreen> {
               ),
             ),
           ),
-        ],
+          ],
+        ),
       ),
     );
   }

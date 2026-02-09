@@ -45,9 +45,9 @@ EMOTION_MAP: dict[str, tuple[float, float]] = {
     "confused": (-0.15, 0.45),
 }
 
-# Inertia blending weights
-_INERTIA_PREV = 0.6
-_INERTIA_NEW = 0.4
+# Default inertia blending weights (overridden by familiarity scaling)
+_INERTIA_PREV = 0.5
+_INERTIA_NEW = 0.5
 
 
 def _clamp(value: float, lo: float, hi: float) -> float:
@@ -122,10 +122,37 @@ def label_to_circumplex(
     )
 
 
-def apply_inertia(prev: EmotionState, new: EmotionState) -> EmotionState:
-    """Blend *new* toward *prev* for smooth emotional transitions."""
-    valence = _clamp(prev.valence * _INERTIA_PREV + new.valence * _INERTIA_NEW, -1.0, 1.0)
-    arousal = _clamp(prev.arousal * _INERTIA_PREV + new.arousal * _INERTIA_NEW, 0.0, 1.0)
+def _inertia_weights(prev: EmotionState, familiarity_level: int) -> tuple[float, float]:
+    """Compute inertia blending weights based on context.
+
+    - Escaping neutral is easier (30/70 prev/new)
+    - Higher familiarity = more responsive emotions
+    """
+    # Fast escape from neutral
+    if prev.label == "neutral":
+        return 0.3, 0.7
+
+    # Familiarity-scaled inertia
+    if familiarity_level >= 8:
+        return 0.35, 0.65  # very responsive
+    elif familiarity_level >= 5:
+        return 0.50, 0.50  # balanced
+    else:
+        return 0.65, 0.35  # slow to change
+
+
+def apply_inertia(
+    prev: EmotionState,
+    new: EmotionState,
+    familiarity_level: int = 5,
+) -> EmotionState:
+    """Blend *new* toward *prev* for smooth emotional transitions.
+
+    Familiarity scales responsiveness: close relationships change faster.
+    """
+    w_prev, w_new = _inertia_weights(prev, familiarity_level)
+    valence = _clamp(prev.valence * w_prev + new.valence * w_new, -1.0, 1.0)
+    arousal = _clamp(prev.arousal * w_prev + new.arousal * w_new, 0.0, 1.0)
     label = _nearest_label(valence, arousal)
     intensity = _intensity_from_arousal(arousal)
     return EmotionState(

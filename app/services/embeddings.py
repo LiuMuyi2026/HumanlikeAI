@@ -13,7 +13,7 @@ class EmbeddingService:
     def __init__(
         self,
         api_key: str,
-        model: str = "models/gemini-embedding-001",
+        model: str = "models/text-embedding-004",
         output_dimensionality: int = 768,
     ):
         self._client = genai.Client(api_key=api_key)

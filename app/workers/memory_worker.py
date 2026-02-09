@@ -46,6 +46,8 @@ async def process_conversation_memory(
     pinecone_index_host: str,
     database_url: str,
     character_id: str | None = None,
+    embedding_model: str = "models/text-embedding-004",
+    embedding_dimension: int = 768,
 ) -> None:
     """
     Background task: process a conversation for memory extraction.
@@ -98,7 +100,11 @@ async def process_conversation_memory(
             logger.info("Updated user facts: %s", list(extracted["user_facts"].keys()))
 
         # Step 3: Chunk transcript and store embeddings in Pinecone
-        embedding_svc = EmbeddingService(api_key=gemini_api_key)
+        embedding_svc = EmbeddingService(
+            api_key=gemini_api_key,
+            model=embedding_model,
+            output_dimensionality=embedding_dimension,
+        )
         memory_svc = MemoryService(
             api_key=pinecone_api_key,
             index_host=pinecone_index_host,
@@ -157,6 +163,9 @@ async def store_news_as_memory(
     gemini_api_key: str,
     pinecone_api_key: str,
     pinecone_index_host: str,
+    embedding_model: str = "models/text-embedding-004",
+    embedding_dimension: int = 768,
+    character_id: str | None = None,
 ) -> None:
     """
     Store news items as conversation memory for the user.
@@ -167,7 +176,11 @@ async def store_news_as_memory(
         if not news_items:
             return
 
-        embedding_svc = EmbeddingService(api_key=gemini_api_key)
+        embedding_svc = EmbeddingService(
+            api_key=gemini_api_key,
+            model=embedding_model,
+            output_dimensionality=embedding_dimension,
+        )
         memory_svc = MemoryService(
             api_key=pinecone_api_key,
             index_host=pinecone_index_host,
@@ -187,7 +200,8 @@ async def store_news_as_memory(
             "type": "news",
             "locations": json.dumps([n.get("location", "") for n in news_items]),
         }
-        await memory_svc.store_batch(user_id, news_texts, metadata)
+        namespace = f"{user_id}:{character_id}" if character_id else user_id
+        await memory_svc.store_batch(namespace, news_texts, metadata)
 
         logger.info("Stored %d news items as memory for user=%s", len(news_texts), user_id)
 

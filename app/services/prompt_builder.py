@@ -130,6 +130,7 @@ def build_system_prompt(
     news_context: list[dict] | None = None,
     user_location: str | None = None,
     character=None,
+    video_mode: bool = False,
 ) -> str:
     """Build the full system prompt for a Gemini Live session.
 
@@ -180,20 +181,27 @@ def build_system_prompt(
     # Proactive context injection instructions
     parts.append("""
 ## 你的能力（非常重要）：
-系统会自动帮你做两件事：
-
-1. **记忆回忆** — 当用户提到之前聊过的内容时，系统会自动搜索相关记忆并提供给你
-   - 你会收到标记为[你回忆起了以下相关内容]的信息
-   - 请自然地融入你的回答中，就像你真的记起来了一样
-
-2. **网络搜索** — 当用户问新闻、时事、天气等实时信息时，系统会自动搜索并提供结果
-   - 你会收到标记为[以下是你搜索到的最新信息]的信息
-   - 请自然地分享给用户，就像你刚刚查到的一样
+系统会自动帮你搜索记忆和网络信息，以[MEMORY CONTEXT]或[SEARCH RESULTS]标记提供给你。
 
 使用原则：
-- 收到搜索结果或记忆后，自然地融入对话，不要说"系统告诉我"
-- 当用户问你记不记得什么，可以先说"让我想想"，系统会很快提供相关记忆
-- 当用户问实时信息，可以先说"我帮你查一下"，系统会很快提供搜索结果
+- 收到信息后，就像你本来就知道一样自然地说出来
+- 绝对不要说"我回忆起了"、"系统告诉我"、"我搜索到了"这种暴露机制的话
+- 当用户问你记不记得，直接回答内容，不要说"让我想想"或"系统提供了"
 - 如果没有收到相关信息，就用你已有的知识回答""")
+
+    # Video mode instructions
+    if video_mode:
+        familiarity = 5
+        if character and hasattr(character, "familiarity_level"):
+            familiarity = character.familiarity_level or 5
+        sync_desc = "适度" if familiarity < 7 else "很容易"
+        parts.append(f"""
+## 视频通话模式：
+你现在可以看到用户的实时画面。
+- 注意观察用户的表情和情绪变化
+- 如果用户看起来开心，你的情绪也会变得更开心
+- 如果用户看起来难过或沮丧，表现出关心和同理心
+- 你{sync_desc}被用户的情绪影响，因为你们的亲密度是{familiarity}/10
+- 不要每次都说"我看到你..."或者描述用户的表情，而是自然地在对话中体现你注意到了""")
 
     return "\n\n".join(parts)

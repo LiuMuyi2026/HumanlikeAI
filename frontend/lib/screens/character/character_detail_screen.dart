@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:cached_network_image/cached_network_image.dart';
 
+import '../../config/responsive.dart';
 import '../../config/theme.dart';
 import '../../models/character.dart';
 import '../../providers/character_provider.dart';
@@ -71,10 +72,12 @@ class _CharacterDetailScreenState extends ConsumerState<CharacterDetailScreen> {
           final avatarUrl = api.avatarUrl(widget.characterId);
           final hasAvatar = character.hasAvatar;
 
-          return CustomScrollView(
-            slivers: [
-              SliverAppBar(
-                expandedHeight: 320,
+          return Responsive.constrain(
+            context,
+            child: CustomScrollView(
+              slivers: [
+                SliverAppBar(
+                  expandedHeight: Responsive.value<double>(context, phone: 320, tablet: 400, desktop: 450),
                 pinned: true,
                 actions: [
                   IconButton(
@@ -208,8 +211,8 @@ class _CharacterDetailScreenState extends ConsumerState<CharacterDetailScreen> {
                   ),
                 ),
               ),
-              SliverPadding(
-                padding: const EdgeInsets.all(20),
+                SliverPadding(
+                  padding: Responsive.contentPadding(context).copyWith(top: 20, bottom: 20),
                 sliver: SliverList(
                   delegate: SliverChildListDelegate([
                     // Action buttons — Voice Call, Video Call, Gallery
@@ -342,7 +345,8 @@ class _CharacterDetailScreenState extends ConsumerState<CharacterDetailScreen> {
                   ]),
                 ),
               ),
-            ],
+              ],
+            ),
           );
         },
         loading: () => const Center(
@@ -460,7 +464,7 @@ class _CharacterDetailScreenState extends ConsumerState<CharacterDetailScreen> {
       child: Row(
         children: [
           SizedBox(
-            width: 140,
+            width: Responsive.value<double>(context, phone: 120, tablet: 140, desktop: 160),
             child: Text(
               label,
               style: TextStyle(

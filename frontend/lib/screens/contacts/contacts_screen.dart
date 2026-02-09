@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../config/responsive.dart';
 import '../../config/theme.dart';
 import '../../providers/character_provider.dart';
 import '../../widgets/character_card.dart';
@@ -69,21 +70,24 @@ class ContactsScreen extends ConsumerWidget {
               ref.invalidate(charactersProvider);
               await ref.read(charactersProvider.future);
             },
-            child: ListView.separated(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-              itemCount: characters.length,
-              separatorBuilder: (_, _) => Divider(
-                height: 1,
-                indent: 72,
-                color: Colors.white.withValues(alpha: 0.06),
+            child: Responsive.constrain(
+              context,
+              child: ListView.separated(
+                padding: Responsive.contentPadding(context).copyWith(top: 4, bottom: 4),
+                itemCount: characters.length,
+                separatorBuilder: (_, _) => Divider(
+                  height: 1,
+                  indent: 72,
+                  color: Colors.white.withValues(alpha: 0.06),
+                ),
+                itemBuilder: (context, index) {
+                  final character = characters[index];
+                  return CharacterCard(
+                    character: character,
+                    onTap: () => context.push('/conversation/${character.id}'),
+                  );
+                },
               ),
-              itemBuilder: (context, index) {
-                final character = characters[index];
-                return CharacterCard(
-                  character: character,
-                  onTap: () => context.push('/conversation/${character.id}'),
-                );
-              },
             ),
           );
         },

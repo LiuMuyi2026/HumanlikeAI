@@ -83,8 +83,8 @@ class ChatNotifier extends StateNotifier<ChatState> {
   StreamSubscription<WsConnectionState>? _stateSub;
   bool _playerInitialized = false;
 
-  // Feature 2: Minimum 2s emotion display timing
-  static const _minEmotionDisplayMs = 2000;
+  // Feature 2: Minimum 3.5s emotion display timing
+  static const _minEmotionDisplayMs = 3500;
   DateTime _lastEmotionChangeTime = DateTime.fromMillisecondsSinceEpoch(0);
   Timer? _pendingEmotionTimer;
   ({String emotion, double valence, double arousal, String intensity})? _queuedEmotion;
@@ -105,6 +105,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
     required String deviceId,
     required String characterId,
     String? displayName,
+    String? mode,
   }) async {
     _stateSub = _ws.stateStream.listen((wsState) {
       state = state.copyWith(connectionState: wsState);
@@ -116,6 +117,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
       deviceId: deviceId,
       characterId: characterId,
       displayName: displayName,
+      mode: mode,
     );
   }
 
@@ -124,6 +126,21 @@ class ChatNotifier extends StateNotifier<ChatState> {
     final payload = msg['payload'] as Map<String, dynamic>? ?? {};
 
     switch (type) {
+      case 'auth_ok':
+        // Apply initial emotion from server (based on relationship/history)
+        final emotion = payload['emotion'] as String?;
+        final valence = (payload['valence'] as num?)?.toDouble();
+        final arousal = (payload['arousal'] as num?)?.toDouble();
+        final intensity = payload['intensity'] as String?;
+        if (emotion != null && emotion != 'neutral') {
+          _applyEmotion(
+            emotion: emotion,
+            valence: valence ?? state.valence,
+            arousal: arousal ?? state.arousal,
+            intensity: intensity ?? state.intensity,
+          );
+        }
+
       case 'status':
         final action = payload['action'] as String? ?? '';
         final tool = payload['tool'] as String? ?? '';
@@ -257,6 +274,10 @@ class ChatNotifier extends StateNotifier<ChatState> {
 
   void sendAudio(Uint8List audioBytes) {
     _ws.sendAudio(audioBytes);
+  }
+
+  void sendVideoFrame(String base64Data) {
+    _ws.sendVideoFrame(base64Data);
   }
 
   Future<void> disconnect() async {

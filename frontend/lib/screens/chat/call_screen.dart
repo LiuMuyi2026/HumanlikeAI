@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../config/responsive.dart';
 import '../../config/theme.dart';
 import '../../providers/audio_provider.dart';
 import '../../providers/chat_provider.dart';
@@ -11,8 +12,8 @@ import '../../providers/character_provider.dart';
 import '../../providers/user_provider.dart';
 import '../../services/ws_service.dart';
 import '../../widgets/avatar_circle.dart';
-import '../../widgets/emotion_avatar.dart';
 import '../../widgets/waveform_indicator.dart';
+import '../../services/camera_service.dart';
 import '../../widgets/camera_preview.dart';
 
 class CallScreen extends ConsumerStatefulWidget {
@@ -34,6 +35,7 @@ class _CallScreenState extends ConsumerState<CallScreen>
   late AnimationController _pulseController;
   Duration _callDuration = Duration.zero;
   Timer? _durationTimer;
+  Timer? _frameCaptureTimer;
   bool _connected = false;
 
   bool get _isVideoMode => widget.mode == 'video';
@@ -57,6 +59,7 @@ class _CallScreenState extends ConsumerState<CallScreen>
       deviceId: deviceId,
       characterId: widget.characterId,
       displayName: user?.displayName,
+      mode: widget.mode,
     );
   }
 
@@ -71,9 +74,27 @@ class _CallScreenState extends ConsumerState<CallScreen>
     });
     // Auto-start recording
     ref.read(audioProvider.notifier).startRecording();
+
+    // Start sending camera frames in video mode
+    if (_isVideoMode) {
+      _startFrameCapture();
+    }
+  }
+
+  void _startFrameCapture() {
+    _frameCaptureTimer?.cancel();
+    _frameCaptureTimer = Timer.periodic(const Duration(seconds: 2), (_) {
+      if (!mounted || !_connected) return;
+      final frame = CameraService.captureFrame(quality: 0.6);
+      if (frame != null) {
+        ref.read(chatProvider.notifier).sendVideoFrame(frame);
+      }
+    });
   }
 
   Future<void> _endCall() async {
+    _frameCaptureTimer?.cancel();
+    _frameCaptureTimer = null;
     _durationTimer?.cancel();
     _durationTimer = null;
     await ref.read(audioProvider.notifier).stopRecording();
@@ -100,6 +121,7 @@ class _CallScreenState extends ConsumerState<CallScreen>
   void dispose() {
     _pulseController.dispose();
     _durationTimer?.cancel();
+    _frameCaptureTimer?.cancel();
     super.dispose();
   }
 
@@ -143,12 +165,28 @@ class _CallScreenState extends ConsumerState<CallScreen>
     final useVideoEmotionMode = _isVideoMode && hasEmotionPack && isConnected;
 
     return Scaffold(
-      body: useVideoEmotionMode
-          ? _buildVideoEmotionLayout(
-              chatState, audioState, characterName, isConnected, isConnecting)
-          : _buildVoiceLayout(
-              chatState, audioState, characterName, isConnected,
-              isConnecting, hasEmotionPack),
+      body: Stack(
+        children: [
+          // Main layout
+          useVideoEmotionMode
+              ? _buildVideoEmotionLayout(
+                  chatState, audioState, characterName, isConnected, isConnecting)
+              : _buildVoiceLayout(
+                  chatState, audioState, characterName, isConnected,
+                  isConnecting, hasEmotionPack),
+          // Single camera PIP — persists across layout switches
+          if (_isVideoMode)
+            Positioned(
+              top: 80,
+              right: 16,
+              child: CameraPreviewWidget(
+                width: Responsive.value<double>(context, phone: 100, tablet: 130, desktop: 160),
+                height: Responsive.value<double>(context, phone: 140, tablet: 180, desktop: 220),
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+        ],
+      ),
     );
   }
 
@@ -244,9 +282,7 @@ class _CallScreenState extends ConsumerState<CallScreen>
 
               const Spacer(),
 
-              // Emotion label + waveform
-              _buildEmotionLabel(chatState),
-              const SizedBox(height: 8),
+              // Waveform
               if (chatState.aiSearching) _buildSearchingIndicator(chatState),
               const SizedBox(height: 8),
               if (isConnected)
@@ -268,16 +304,6 @@ class _CallScreenState extends ConsumerState<CallScreen>
           ),
         ),
 
-        // Camera PIP
-        Positioned(
-          top: 80,
-          right: 16,
-          child: CameraPreviewWidget(
-            width: 100,
-            height: 140,
-            borderRadius: BorderRadius.circular(12),
-          ),
-        ),
       ],
     );
   }
@@ -296,85 +322,82 @@ class _CallScreenState extends ConsumerState<CallScreen>
       child: SafeArea(
         child: Stack(
           children: [
-            Column(
-              children: [
-                // Top bar
-                _buildTopBar(isConnected, isConnecting, characterName),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                // Fixed elements: topBar(~64) + spacing(8+8) + waveform(40) + controls(~120) ≈ 240
+                final fixedHeight = 240.0;
+                final flexibleHeight = (constraints.maxHeight - fixedHeight).clamp(100.0, 800.0);
+                // Avatar gets ~60% of flexible space, transcript gets ~25%
+                final maxAvatarSize = Responsive.value<double>(context, phone: 200, tablet: 260, desktop: 300);
+                final avatarSize = (flexibleHeight * 0.55).clamp(100.0, maxAvatarSize);
+                final fallbackRadius = (avatarSize / 3).clamp(35.0, 100.0);
+                final transcriptHeight = (flexibleHeight * 0.25).clamp(60.0, 180.0);
 
-                const Spacer(flex: 1),
+                return Column(
+                  children: [
+                    // Top bar
+                    _buildTopBar(isConnected, isConnecting, characterName),
 
-                // Avatar area with emotion images
-                AnimatedBuilder(
-                  animation: _pulseController,
-                  builder: (context, child) {
-                    final scale = chatState.aiSpeaking
-                        ? 1.0 + (_pulseController.value * 0.05)
-                        : 1.0;
-                    return Transform.scale(scale: scale, child: child);
-                  },
-                  child: Column(
-                    children: [
-                      if (isConnected)
-                        EmotionAvatar(
-                          characterId: widget.characterId,
-                          size: 200,
-                          hasEmotionPack: hasEmotionPack,
-                        )
-                      else
-                        AvatarCircle(
-                          characterId: widget.characterId,
-                          radius: 70,
-                        ),
-                      const SizedBox(height: 16),
-                      Text(
-                        characterName,
-                        style: const TextStyle(
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                        ),
+                    const Spacer(flex: 1),
+
+                    // Avatar area with emotion images
+                    AnimatedBuilder(
+                      animation: _pulseController,
+                      builder: (context, child) {
+                        final scale = chatState.aiSpeaking
+                            ? 1.0 + (_pulseController.value * 0.05)
+                            : 1.0;
+                        return Transform.scale(scale: scale, child: child);
+                      },
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          // Voice mode always uses static avatar;
+                          // emotion images only in video mode
+                          AvatarCircle(
+                            characterId: widget.characterId,
+                            radius: fallbackRadius,
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            characterName,
+                            style: const TextStyle(
+                              fontSize: 24,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
-                ),
+                    ),
 
-                const SizedBox(height: 8),
+                    const SizedBox(height: 8),
 
-                // Searching indicator
-                if (chatState.aiSearching) _buildSearchingIndicator(chatState),
+                    // Searching indicator
+                    if (chatState.aiSearching) _buildSearchingIndicator(chatState),
 
-                const SizedBox(height: 8),
+                    const SizedBox(height: 8),
 
-                // Waveform
-                if (isConnected)
-                  WaveformIndicator(
-                    active: chatState.aiSpeaking,
-                    color: AppTheme.primary,
-                  ),
+                    // Waveform
+                    if (isConnected)
+                      WaveformIndicator(
+                        active: chatState.aiSpeaking,
+                        color: AppTheme.primary,
+                      ),
 
-                const Spacer(flex: 1),
+                    const Spacer(flex: 1),
 
-                // Transcript
-                if (chatState.transcript.isNotEmpty) _buildTranscript(chatState),
+                    // Transcript
+                    if (chatState.transcript.isNotEmpty)
+                      _buildTranscriptWithHeight(chatState, transcriptHeight),
 
-                const Spacer(flex: 1),
-
-                // Controls
-                _buildControls(audioState),
-              ],
+                    // Controls
+                    _buildControls(audioState),
+                  ],
+                );
+              },
             ),
 
-            // Camera PIP overlay (video mode only)
-            if (_isVideoMode)
-              Positioned(
-                top: 80,
-                right: 16,
-                child: CameraPreviewWidget(
-                  width: 120,
-                  height: 160,
-                  borderRadius: BorderRadius.circular(16),
-                ),
-              ),
           ],
         ),
       ),
@@ -445,49 +468,6 @@ class _CallScreenState extends ConsumerState<CallScreen>
     );
   }
 
-  Widget _buildEmotionLabel(ChatState chatState) {
-    final emotion = chatState.currentEmotion;
-    final (color, label) = _emotionData(emotion);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.2),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: color.withValues(alpha: 0.4)),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(fontSize: 13, color: color, fontWeight: FontWeight.w500),
-      ),
-    );
-  }
-
-  static (Color, String) _emotionData(String emotion) {
-    return switch (emotion) {
-      'happy' => (Colors.amber, 'Happy'),
-      'sad' => (Colors.blue, 'Sad'),
-      'angry' => (Colors.red, 'Angry'),
-      'excited' => (Colors.orange, 'Excited'),
-      'thinking' => (AppTheme.primary, 'Thinking'),
-      'surprised' => (Colors.purple, 'Surprised'),
-      'loving' => (AppTheme.accent, 'Loving'),
-      'anxious' => (Colors.teal, 'Anxious'),
-      'jealous' => (Colors.deepOrange, 'Jealous'),
-      'shy' => (Colors.pink, 'Shy'),
-      'disappointed' => (Colors.blueGrey, 'Disappointed'),
-      'frustrated' => (const Color(0xFFE65100), 'Frustrated'),
-      'proud' => (const Color(0xFFFFD600), 'Proud'),
-      'grateful' => (Colors.green, 'Grateful'),
-      'bored' => (Colors.grey, 'Bored'),
-      'curious' => (Colors.lightBlue, 'Curious'),
-      'embarrassed' => (Colors.pink[400]!, 'Embarrassed'),
-      'playful' => (Colors.purple[400]!, 'Playful'),
-      'lonely' => (Colors.indigo, 'Lonely'),
-      'confused' => (Colors.brown, 'Confused'),
-      _ => (Colors.grey, 'Neutral'),
-    };
-  }
-
   Widget _buildSearchingIndicator(ChatState chatState) {
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -514,9 +494,54 @@ class _CallScreenState extends ConsumerState<CallScreen>
     );
   }
 
+  Widget _buildTranscriptWithHeight(ChatState chatState, double height) {
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxHeight: height),
+      child: ListView.builder(
+        shrinkWrap: true,
+        reverse: true,
+        padding: const EdgeInsets.symmetric(horizontal: 24),
+        itemCount: chatState.transcript.length,
+        itemBuilder: (context, index) {
+          final entry = chatState.transcript[
+              chatState.transcript.length - 1 - index];
+          final isUser = entry.role == 'user';
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Row(
+              mainAxisAlignment:
+                  isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
+              children: [
+                Flexible(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: isUser
+                          ? AppTheme.primary.withValues(alpha: 0.2)
+                          : Colors.white.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Text(
+                      entry.text,
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.white.withValues(alpha: 0.85),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   Widget _buildTranscript(ChatState chatState) {
     return SizedBox(
-      height: 120,
+      height: Responsive.value<double>(context, phone: 120, tablet: 160, desktop: 180),
       child: ListView.builder(
         reverse: true,
         padding: const EdgeInsets.symmetric(horizontal: 24),

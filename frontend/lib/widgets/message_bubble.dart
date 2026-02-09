@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../config/responsive.dart';
 import '../config/theme.dart';
 import '../models/message.dart';
 
@@ -39,7 +40,12 @@ class MessageBubble extends StatelessWidget {
               children: [
                 Container(
                   constraints: BoxConstraints(
-                    maxWidth: MediaQuery.of(context).size.width * 0.7,
+                    maxWidth: Responsive.value(
+                      context,
+                      phone: MediaQuery.of(context).size.width * 0.7,
+                      tablet: 400,
+                      desktop: 480,
+                    ),
                   ),
                   decoration: BoxDecoration(
                     color: isUser
@@ -88,17 +94,23 @@ class MessageBubble extends StatelessWidget {
 
   Widget _buildContent(BuildContext context) {
     if (message.isImage) {
+      final imgSize = Responsive.value<double>(
+        context,
+        phone: 200,
+        tablet: 260,
+        desktop: 300,
+      );
       return ClipRRect(
         borderRadius: BorderRadius.circular(16),
         child: mediaUrl != null
             ? Image.network(
                 mediaUrl!,
-                width: 200,
-                height: 200,
+                width: imgSize,
+                height: imgSize,
                 fit: BoxFit.cover,
-                errorBuilder: (_, _, _) => _buildImagePlaceholder(),
+                errorBuilder: (_, _, _) => _buildImagePlaceholder(context),
               )
-            : _buildImagePlaceholder(),
+            : _buildImagePlaceholder(context),
       );
     }
 
@@ -143,10 +155,16 @@ class MessageBubble extends StatelessWidget {
     );
   }
 
-  Widget _buildImagePlaceholder() {
+  Widget _buildImagePlaceholder(BuildContext context) {
+    final imgSize = Responsive.value<double>(
+      context,
+      phone: 200,
+      tablet: 260,
+      desktop: 300,
+    );
     return Container(
-      width: 200,
-      height: 200,
+      width: imgSize,
+      height: imgSize,
       color: Colors.grey.shade800,
       child: const Icon(Icons.image, size: 48, color: Colors.white30),
     );

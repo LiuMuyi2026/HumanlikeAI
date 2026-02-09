@@ -188,12 +188,11 @@ def classify_emotion_heuristic(
     if relationship_type and relationship_type in RELATIONSHIP_EMOTION_BIAS:
         bias = RELATIONSHIP_EMOTION_BIAS[relationship_type]
         # Higher familiarity = stronger bias away from neutral
-        if familiarity_level >= 7:
+        if familiarity_level >= 6:
             return bias
-        elif familiarity_level >= 4:
-            # 50/50 bias vs neutral — use text length as tiebreaker
-            # Longer responses tend to be more engaged
-            return bias if len(text) > 20 else "neutral"
+        elif familiarity_level >= 3:
+            # Bias vs neutral — shorter threshold for engaged responses
+            return bias if len(text) > 10 else "neutral"
 
     return "neutral"
 
@@ -249,10 +248,10 @@ def classify_to_circumplex(
 
     Uses the fast keyword heuristic, maps the label to valence/arousal,
     applies MBTI modifiers, then blends with the previous state for smooth
-    emotional transitions.
+    emotional transitions. Familiarity scales responsiveness.
     """
     label = classify_emotion_heuristic(text, relationship_type, familiarity_level)
     new_state = label_to_circumplex(label, mbti=mbti)
     if prev_state is not None:
-        return apply_inertia(prev_state, new_state)
+        return apply_inertia(prev_state, new_state, familiarity_level=familiarity_level)
     return new_state

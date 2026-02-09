@@ -33,6 +33,7 @@ class WsService {
     String? characterId,
     String? displayName,
     String? location,
+    String? mode,
   }) async {
     if (_state != WsConnectionState.disconnected) return;
 
@@ -51,6 +52,7 @@ class WsService {
           characterId: characterId,
           displayName: displayName,
           location: location,
+          mode: mode,
         ).toJson(),
       );
 
@@ -99,6 +101,11 @@ class WsService {
   void sendText(String text) {
     if (_state != WsConnectionState.connected) return;
     _channel?.sink.add(WsMessage.text(text: text).toJson());
+  }
+
+  void sendVideoFrame(String base64Data) {
+    if (_state != WsConnectionState.connected) return;
+    _channel?.sink.add(WsMessage.videoFrame(base64Data: base64Data).toJson());
   }
 
   void endSession() {
